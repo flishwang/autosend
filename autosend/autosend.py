@@ -168,9 +168,10 @@ class TextIOWrapperWithLogging:
                 status = status,
             )
             meta_info=[
-                'start_time: ' + self.start_time_str,
-                '  work_dir: ' + self.cwd,
-                '      args: ' + self.args,
+                ' start_time: ' + self.start_time_str,
+                'last update: ' + time.strftime('%Y-%m-%d %H:%M'),
+                '   work_dir: ' + self.cwd,
+                '       args: ' + self.args,
                 '================= last 100 lines of the log ================='
             ]
 

@@ -2,11 +2,11 @@
 import setuptools
 
 
-with open("README.md", "r") as f:
+with open("README.md", "r",encoding='utf-8') as f:
     long_description = f.read()
 
 setuptools.setup(
-    name="autosend",  
+    name="autosend",
     version="0.0.1",
     author="flish_wang",
     author_email="flish_wang@sina.com",
