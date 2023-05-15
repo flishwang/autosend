@@ -12,36 +12,7 @@ from email.mime.application import MIMEApplication
 from io import StringIO
 import atexit
 from email.generator import Generator
-
-example_yaml='''
-
-#  =========== autosend yaml template ============
-# specify the email SMTP server
-username: "username"
-password: "password"
-server: smtp.example.com
-port: 25
-tls: False
-timeout: 15
-
-# specify the email subject format, where {path} implies the work_dir running the python script,
-# {curtime} implies the current date and time, and {status} may be running or complete 
-subject_format: "【符合保密要求，可在手机端查阅】{path}日志 [{curtime}] [{status}]"
-
-# specify the email sender's and receivers' addresses
-sender: "example@example.com"
-receivers: 
-- "example@example.com"
-
-# send logs by email only if the program runs after the specific seconds
-send_after_seconds: 3600
-
-# send logs by email EVERY specific seconds if the program is keep running
-send_periods: 86400
-
-# whether clear history logs after autosending so that the next sending will not contain repeated 
-clear_after_send: True
-'''
+from html import escape
 
 def as_string(self, unixfrom=False, maxheaderlen=0, policy=None):
     """Return the entire formatted message as a string.
@@ -68,6 +39,81 @@ def as_string(self, unixfrom=False, maxheaderlen=0, policy=None):
 from email.message import Message
 Message.as_string=as_string
 
+example_yaml='''
+#  =========== autosend yaml template ============
+# specify the email SMTP server
+username: "username"
+password: "password"
+server: smtp.example.com
+port: 25
+tls: False
+timeout: 15
+
+# specify the email subject format, where {path} implies the work_dir running the python script,
+# {curtime} implies the current date and time, and {status} may be running or complete 
+subject_format: "【符合保密要求，可在手机端查阅】{path}日志 [{curtime}] [{status}]"
+
+# specify the email sender's and receivers' addresses
+sender: "example@example.com"
+receivers: 
+- "example@example.com"
+
+# send logs by email only if the program runs after the specific seconds
+send_after_seconds: 3600
+
+# send logs by email EVERY specific seconds if the program is keep running
+send_periods: 86400
+
+# whether clear history logs after autosending so that the next sending will not contain repeated 
+clear_after_send: True
+
+# whether send html format logs instead of plain text
+html: True
+'''
+
+def simulate_terminal_output(output_str):
+    width = 140
+    current_pos = 0
+    lines = []
+    current_line = ""
+    
+    # Iterate through each character in the input string
+    for char in output_str:
+        # Handle control characters
+        if char == '\b':
+            if current_pos > 0:
+                current_pos -= 1
+                current_line = current_line[:-1]
+        elif char == '\r':
+            current_pos = 0
+            current_line = ""
+        elif char == '\n':
+            lines.append(current_line)
+            current_line = ""
+            current_pos = 0
+        else:
+            # Append printable characters to current line
+            if current_pos >= width:
+                lines.append(current_line)
+                current_line = ""
+                current_pos = 0
+            current_line += char
+            current_pos += 1
+    lines.append(current_line)
+    return lines
+
+def lines_to_text(lines,plain=False):
+    if plain:
+        return '\n'.join(lines)
+    else:
+        # Generate HTML document
+        html_output = "<html><head><style>pre {font-family: 'Courier New', " \
+                      "Courier, monospace; font-size: 14px;}</style></head><body><pre>"
+        for line in lines:
+            html_output += escape(line) + "<br/>"
+        html_output += "</pre></body></html>"
+        return html_output
+
 class TextIOWrapperWithLogging:
     def __init__(self,enabled=True,config_addr='~/.autosend.yaml'):
         try:
@@ -87,6 +133,7 @@ class TextIOWrapperWithLogging:
         self.send_periods = float(self.config.get('send_periods', 86400))
         self.sbj_fmt=self.config.get('subject_format',"【符合保密要求，可在手机端查阅】{path}日志 [{curtime}] [{status}]")
         self.clear_after_send = self.config.get('clear_after_send',True)
+        self.html = self.config.get('html',True)
 
         self.start_time_str=time.strftime('%Y-%m-%d %H:%M', time.localtime(self.start_time))
         self.log_start_time=time.time()
@@ -103,7 +150,7 @@ class TextIOWrapperWithLogging:
         atexit.register(self.__del__)
 
     def read_config(self,path):
-        with open(os.path.expanduser(path), "r") as stream:
+        with open(os.path.expanduser(path), "r", encoding='utf-8') as stream:
             return yaml.safe_load(stream)
 
 
@@ -141,7 +188,7 @@ class TextIOWrapperWithLogging:
         msg['To'] = ", ".join(receivers)
         msg['Subject'] = subject
 
-        msg.attach(MIMEText(body, 'plain'))
+        msg.attach(MIMEText(body, 'html' if self.html else 'plain'))
 
         for attach_name,attach_data in attachments:
             attachment_part = MIMEApplication(attach_data, Name=attach_name)
@@ -156,11 +203,12 @@ class TextIOWrapperWithLogging:
         smtp_server.quit()
 
     def send_logs(self, status=''):
-        self.__stderr__.write('#autosend: sending log\n')
-        self.__stderr__.flush()
         if not self.should_send:
             return
-        texts = self.buffer.getvalue()
+        self.__stderr__.write('#autosend: sending log\n')
+        self.__stderr__.flush()
+
+        text_lines = simulate_terminal_output(self.buffer.getvalue())
         if self.clear_after_send:
             self.buffer = StringIO() 
         self.log_start_time = time.time()
@@ -177,9 +225,8 @@ class TextIOWrapperWithLogging:
                 '       args: ' + self.args,
                 '================= last 100 lines of the log ================='
             ]
-
-            body='\n'.join(meta_info + texts.rsplit('\n',100)[-100:])
-            attachments = [(f"logs_{time.strftime('%Y-%m-%d-%H-%M')}.txt", texts)]
+            body=lines_to_text(meta_info + text_lines[-100:],plain=not self.html)
+            attachments = [(f"logs_{time.strftime('%Y-%m-%d-%H-%M')}.txt", '\n'.join(text_lines))]
             self.send_email(subject, body, attachments)
 
         except Exception:

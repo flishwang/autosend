@@ -31,6 +31,9 @@ send_after_seconds: 3600
 
 # send logs by email EVERY specific seconds if the program is keep running
 send_periods: 86400
+
+# whether send html format logs instead of plain text
+html: True
 ```
  
 Then add the following line in your code:
