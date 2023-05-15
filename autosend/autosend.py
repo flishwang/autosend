@@ -39,8 +39,9 @@ send_after_seconds: 3600
 # send logs by email EVERY specific seconds if the program is keep running
 send_periods: 86400
 
+# whether clear history logs after autosending so that the next sending will not contain repeated 
+clear_after_send: True
 '''
-
 
 def as_string(self, unixfrom=False, maxheaderlen=0, policy=None):
     """Return the entire formatted message as a string.
@@ -85,6 +86,7 @@ class TextIOWrapperWithLogging:
         self.send_after_seconds = float(self.config.get('send_after_seconds',3600))
         self.send_periods = float(self.config.get('send_periods', 86400))
         self.sbj_fmt=self.config.get('subject_format',"【符合保密要求，可在手机端查阅】{path}日志 [{curtime}] [{status}]")
+        self.clear_after_send = self.config.get('clear_after_send',True)
 
         self.start_time_str=time.strftime('%Y-%m-%d %H:%M', time.localtime(self.start_time))
         self.log_start_time=time.time()
@@ -159,7 +161,8 @@ class TextIOWrapperWithLogging:
         if not self.should_send:
             return
         texts = self.buffer.getvalue()
-        self.buffer = StringIO()
+        if self.clear_after_send:
+            self.buffer = StringIO() 
         self.log_start_time = time.time()
         try:
             subject = self.sbj_fmt.format(
