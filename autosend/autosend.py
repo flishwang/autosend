@@ -76,7 +76,7 @@ def simulate_terminal_output(output_str):
     current_pos = 0
     lines = []
     current_line = ""
-    
+
     # Iterate through each character in the input string
     for char in output_str:
         # Handle control characters
@@ -142,30 +142,36 @@ class TextIOWrapperWithLogging:
         self.should_send = False
 
         self.path=os.path.basename(os.getcwd())
-        self.__stdout__ = sys.stdout
-        self.__stderr__ = sys.stderr
+        for func in 'write','writelines','flush':
+            self.wrap_writer(sys.stdout,func)
+            self.wrap_writer(sys.stderr,func)
+
         print('#autosend: starting log')
-        sys.stdout = self
-        sys.stderr = self
+
         atexit.register(self.__del__)
 
     def read_config(self,path):
         with open(os.path.expanduser(path), "r", encoding='utf-8') as stream:
             return yaml.safe_load(stream)
 
-
-    def write(self, text):
-        self.buffer.write(text)
-        sys.__stdout__.write(text)
-        self.check()
-
-    def writelines(self,texts,/):
-        self.buffer.writelines(texts)
-        sys.__stdout__.writelines(texts)
-        self.check()
+    def write(self,obj):
+        sys.stderr._raw_write(obj)
 
     def flush(self):
-        sys.__stdout__.flush()
+        sys.stderr._raw_flush()
+
+    def wrap_writer(self,obj,func_name,wrap_back=False):
+        if wrap_back:
+            setattr(obj, func_name,getattr(obj,'_raw_' + func_name))
+            return
+        setattr(obj,'_raw_'+func_name,getattr(obj,func_name))
+        def func(*arg,**kwargs):
+            #self.write('--{} -- {} -|-\n'.format(arg,kwargs))
+            getattr(self.buffer,func_name)(*arg,**kwargs)
+            value=getattr(obj,'_raw_'+func_name)(*arg,**kwargs)
+            self.check()
+            return value
+        setattr(obj,func_name,func)
 
     def check(self):
         elapsed_time = time.time() - self.log_start_time
@@ -205,12 +211,12 @@ class TextIOWrapperWithLogging:
     def send_logs(self, status=''):
         if not self.should_send:
             return
-        self.__stderr__.write('#autosend: sending log\n')
-        self.__stderr__.flush()
+        self.write('#autosend: sending log\n')
+        self.flush()
 
         text_lines = simulate_terminal_output(self.buffer.getvalue())
         if self.clear_after_send:
-            self.buffer = StringIO() 
+            self.buffer = StringIO()
         self.log_start_time = time.time()
         try:
             subject = self.sbj_fmt.format(
@@ -225,23 +231,25 @@ class TextIOWrapperWithLogging:
                 '       args: ' + self.args,
                 '================= last 100 lines of the log ================='
             ]
-            body=lines_to_text(meta_info + text_lines[-100:],plain=not self.html)
+            body=lines_to_text(simulate_terminal_output('\n'.join(meta_info)) + text_lines[-100:],plain=not self.html)
             attachments = [(f"logs_{time.strftime('%Y-%m-%d-%H-%M')}.txt", '\n'.join(text_lines))]
             self.send_email(subject, body, attachments)
 
         except Exception:
-            self.__stderr__.write('#autosend: email sending failed:\n')
-            self.__stderr__.write(traceback.format_exc())
-            self.__stderr__.flush()
+            self.write('#autosend: email sending failed:\n')
+            self.write(traceback.format_exc())
+            self.flush()
+        self.write('#autosend: sucessfully send the log\n')
 
     def __del__(self):
         if not self.enabled:
             return
         self.enabled=False
         self.send_logs('completed')
-        sys.stdout = self.__stdout__
-        sys.stderr = self.__stderr__
+        for func in 'write', 'writelines', 'flush':
+            self.wrap_writer(sys.stdout, func,wrap_back=True)
+            self.wrap_writer(sys.stderr, func,wrap_back=True)
 
-if int(os.environ.get('LOCAL_RANK',os.environ.get('RANK',0)))==0:
+if int(os.environ.get('LOCAL_RANK',os.environ.get('RANK',0)))==0 and not sys.gettrace():
     logger = TextIOWrapperWithLogging()
 
