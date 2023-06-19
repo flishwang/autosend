@@ -13,6 +13,7 @@ from io import StringIO
 import atexit
 from email.generator import Generator
 from html import escape
+from multiprocessing import current_process
 
 def as_string(self, unixfrom=False, maxheaderlen=0, policy=None):
     """Return the entire formatted message as a string.
@@ -175,7 +176,8 @@ class TextIOWrapperWithLogging:
 
     def check(self):
         elapsed_time = time.time() - self.log_start_time
-        self.should_send = time.time() - self.start_time > self.send_after_seconds
+        self.should_send = (time.time() - self.start_time > self.send_after_seconds) and \
+                           current_process().name == 'MainProcess'
         if elapsed_time > self.send_periods:
             self.send_logs('running')
 
@@ -232,7 +234,7 @@ class TextIOWrapperWithLogging:
                 '================= last 100 lines of the log ================='
             ]
             body=lines_to_text(simulate_terminal_output('\n'.join(meta_info)) + text_lines[-100:],plain=not self.html)
-            attachments = [(f"logs_{time.strftime('%Y-%m-%d-%H-%M')}.txt", '\n'.join(text_lines))]
+            attachments = [(f"logs_{time.strftime('%Y-%m-%d-%H-%M')}.txt", '\n'.join(text_lines).encode('utf-8'))]
             self.send_email(subject, body, attachments)
 
         except Exception:
