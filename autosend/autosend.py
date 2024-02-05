@@ -231,10 +231,15 @@ class TextIOWrapperWithLogging:
                 'last update: ' + time.strftime('%Y-%m-%d %H:%M'),
                 '   work_dir: ' + self.cwd,
                 '       args: ' + self.args,
-                '================= last 100 lines of the log ================='
+                '================= last 500 lines of the log =================',
             ]
-            body=lines_to_text(simulate_terminal_output('\n'.join(meta_info)) + text_lines[-100:],plain=not self.html)
-            attachments = [(f"logs_{time.strftime('%Y-%m-%d-%H-%M')}.txt", '\n'.join(text_lines).encode('utf-8'))]
+            meta_info.extend(text_lines[-500:])
+            #meta_info.append('================= full logs =================')
+            body=lines_to_text(simulate_terminal_output('\n'.join(meta_info)) ,plain=not self.html)
+            if len(text_lines)>500:
+                attachments = [(f"logs_{time.strftime('%Y-%m-%d-%H-%M')}.txt", '\n'.join(text_lines).encode('utf-8'))]
+            else:
+                attachments = []
             self.send_email(subject, body, attachments)
 
         except Exception:

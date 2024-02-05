@@ -7,7 +7,7 @@ with open("README.md", "r",encoding='utf-8') as f:
 
 setuptools.setup(
     name="autosend",
-    version="0.0.5",
+    version="0.0.6",
     author="flish_wang",
     author_email="flish_wang@sina.com",
     description="a simple tool that logs what is printed on the screen, and emails the logs to you",
